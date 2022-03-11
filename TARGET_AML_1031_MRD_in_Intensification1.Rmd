@@ -1,0 +1,315 @@
+---
+title: 'Outcome Analysis in MRD+ positive patients at End of Intestification'
+author: "Jenny Smith"
+date: "June 14, 2018"
+output: html_document
+---
+
+```{r setup}
+library(knitr)
+knitr::opts_chunk$set(tidy.opts=list(width.cutoff=50),tidy=TRUE, fig.align='center', fig.width = 10, fig.height = 10)
+knitr::opts_knit$set(root.dir = '/fh/fast/meshinchi_s/workingDir/TARGET/AML_TARGET/Clinical/analysis/2018.06.14_outcome_MRD+_EOIntens')
+```
+
+
+```{r message = FALSE, warning=FALSE}
+library(stringr)
+library(magrittr)
+library(ggplot2)
+library(dplyr)
+library(tibble)
+library(tidyr)
+getwd()
+```
+
+```{r}
+source("~/scripts/survival_analysis/Survplot_Functions_2017.03.31.r")
+```
+
+
+#Read in the Clinical Data
+
+```{r}
+CDE.1031 <- read.csv("~/reference_mapping-files/TARGET_AML_1031_CDE_cleaned_6.15.2018.csv", 
+                     stringsAsFactors = FALSE)
+
+# head(CDE.1031[,1:5])
+# dim(CDE.1031)
+```
+
+
+```{r}
+Intens <- read.csv("~/reference_mapping-files/AAML1031All MRD at EO Intensification.csv", 
+                   stringsAsFactors = FALSE)
+
+
+Intens <- Intens %>%
+  #Collapsed.classification is considering any patients with detectable MRD as Positive. 
+  #Classification.End.of.Intensification.1 as MRD+ is greater than or equal to 0.1
+  mutate(Collapsed.Classification=gsub("Neg.+", "Negative",
+                                       gsub("Positive .+", "Positive", Classification.End.of.Intensification.1)), 
+         Classification.End.of.Intensification.1=gsub("Neg.+", "Negative", Classification.End.of.Intensification.1)) 
+
+# dim(Intens) #787
+# head(Intens[,1:5])
+```
+
+
+```{r}
+table(Intens$Classification.End.of.Intensification.1)
+table(Intens$Collapsed.Classification)
+```
+
+
+```{r}
+Intens.SurvData <- Intens %>% 
+  inner_join(.,select(CDE.1031, everything()),
+             by=c("cogname"="Patient.registration.number")) %>% 
+  filter(Classification.End.of.Intensification.1 != "Inadequate") %>%
+  filter(SCT.in.1st.CR != "Unknown") %>% 
+  mutate(X=rep("AML", nrow(.))) %>%
+  droplevels(.) 
+
+# head(Intens.SurvData[,1:5]) #650 patients
+# dim(Intens.SurvData)
+```
+
+```{r}
+addmargins(table(Intens.SurvData$Classification.End.of.Intensification.1, Intens.SurvData$OS.event.ID,
+                 useNA = "always"))
+```
+
+```{r}
+addmargins(table(Intens.SurvData$Collapsed.Classification, Intens.SurvData$OS.event.ID,
+                 useNA = "always"))
+```
+
+```{r}
+table(Intens.SurvData$SCT.in.1st.CR, Intens.SurvData$Classification.End.of.Intensification.1) #87 in SCT 
+table(Intens.SurvData$SCT.in.1st.CR, Intens.SurvData$Collapsed.Classification) #87 in SCT 
+```
+
+There were only 20 patients who were positive for MRD at the end of intesification 1 and went into SCT. 
+
+
+Classification.End.of.Intensification.1
+Collapsed Classification
+
+MRD.at.end.of.course.1
+MRD.at.end.of.course.2
+
+Patients who are
+1) MRD+ at CR1, MRD+ at CR2, and MRD+ EOInt
+2) MRD+ at CR1, MRD+ at CR2, and MRD- at EOInt
+3) MRD+ at CR1, MRD- at CR2, and MRD- at EOInt
+
+```{r}
+cohort3 <- Intens.SurvData %>%
+  filter(MRD.at.end.of.course.1 != "Unknown") %>%
+  filter(MRD.at.end.of.course.2 != "Unknown") %>% 
+  mutate(MRD.at.end.of.course.1=ifelse(MRD.at.end.of.course.1 == "Yes", ))
+
+dim(cohort3) #602 patients
+table(cohort3$MRD.at.end.of.course.1)
+table(cohort3$MRD.at.end.of.course.2)
+```
+
+Postive at CR1 = 106 patients
+- 21 patient positive at CR2 and positve at EOInt
+- 11 patients negative at CR2 
+
+
+```{r}
+table(cohort3$Collapsed.Classification, cohort3$MRD.at.end.of.course.2, cohort3$MRD.at.end.of.course.1)
+```
+
+
+
+
+
+
+
+
+#OS and EFS
+
+##SCT +/- 
+
+```{r}
+KM.SCT <- KM.plots(df=Intens.SurvData, groupBy = "X", type="OS", covariate = "SCT.in.1st.CR", cohort = "1031")
+
+KM.SCT
+# saveMultiPlots(KM.SCT)
+```
+
+```{r}
+KM.SCT$OS
+KM.SCT$EFS
+```
+
+
+## MRD+ with and without SCT
+
+```{r}
+# subset(Intens.SurvData, Collapsed.Classification == "Positive")
+KM.MRD_inSCT <- KM.plots(df=Intens.SurvData, 
+                         groupBy = "Collapsed.Classification", 
+                         type="OS", 
+                         covariate = "SCT.in.1st.CR", 
+                         cohort="1031")
+
+KM.MRD_inSCT
+# saveMultiPlots(KM.MRD_inSCT)
+```
+
+```{r}
+KM.MRD_inSCT$OS
+KM.MRD_inSCT$EFS
+```
+
+
+
+## All the Patient MRD Groups (not inadequate)
+```{r}
+KM.MRD_bySCT <- KM.plots(df=Intens.SurvData, 
+                   groupBy = "SCT.in.1st.CR",
+                   type = "OS", 
+                   covariate = "Classification.End.of.Intensification.1", 
+                   cohort = "1031")
+
+KM.MRD_bySCT
+# saveMultiPlots(KM.plots.res = KM.MRD_bySCT,w=10)
+```
+
+```{r fig.height=5, fig.width=10}
+KM.MRD_bySCT$OS
+```
+
+
+```{r fig.height=5, fig.width=10}
+KM.MRD_bySCT$EFS
+```
+
+
+##Any MRD considered to be MRD positive
+
+```{r}
+KM.MRD_bySCT.2 <- KM.plots(df=Intens.SurvData, 
+                   groupBy = "SCT.in.1st.CR",
+                   type = "OS", 
+                   covariate = "Collapsed.Classification", 
+                   cohort = "1031")
+
+KM.MRD_bySCT.2
+# saveMultiPlots(KM.plots.res = KM.MRD_bySCT.2,w=10)
+```
+
+```{r fig.height=5, fig.width=10}
+KM.MRD_bySCT.2$OS
+```
+
+
+```{r fig.height=5, fig.width=10}
+KM.MRD_bySCT.2$EFS
+```
+
+
+#Relapse Risk of the MRD+/- in SCT
+
+```{r}
+library(survival)
+library(cmprsk)
+```
+
+```{r}
+
+```
+
+
+```{r}
+cumInc.MRD <- Intens.SurvData %>% 
+  # group_by(Classification.End.of.Intensification.1) %>% 
+  do(cumIncidence=cuminc(ftime = .$EFS.time..days., 
+                         fstatus = .$EFS.event.type.ID, 
+                         group = .[,"Classification.End.of.Intensification.1"], 
+                         rho=0, 
+                         cencode="Censored"))
+
+cumInc.MRD
+```
+
+```{r}
+plot(cumInc.MRD$cumIncidence[[1]], color = brewer.pal(9, "Set1"), lwd=3)
+```
+
+
+
+```{r}
+cumulativeInc.Reg <- function(df, groupBy, covariate, cohort, cc=NULL){
+  if (cohort == "0531"){
+    
+  }
+}
+```
+
+
+```{r}
+cumIncGO <- CDE.0531.Go %>%
+  group_by(rs12459419) %>%
+  do(cumIncidence=cuminc(ftime=.$Event.Free.Survival.Time.in.Days, 
+                         fstatus=.$First.Event,
+                         group=.$GO.Treatment,
+                         rho=0,
+                         cencode = "Censored"), 
+     compRiskReg=crr(ftime = .$Event.Free.Survival.Time.in.Days, 
+                  fstatus= .$First.Event,
+                  cov1 = matrix(.$Num.GO.Treatment, dimnames = list(NULL,"GO.Trt")), 
+                  failcode = "Relapse", 
+                  cengroup = "Censored"))
+```
+
+
+
+
+#Examine the Clinical Characteristics of the 20 MRD+ in SCT
+
+```{r message=FALSE}
+library(compareGroups)
+```
+
+```{r}
+SCT <- Intens.SurvData %>%
+  filter(SCT.in.1st.CR == "Yes") %>%
+  select(USI,3, 15:18,25:26, 65, 54, 55,57:58,33:50)
+
+# head(SCT[,1:5])
+```
+
+
+```{r}
+dim(SCT)
+table(SCT$Classification.End.of.Intensification.1)
+```
+
+
+```{r warning=FALSE}
+comp <- compareGroups(Classification.End.of.Intensification.1 ~ ., data = SCT[,-1], 
+                      method=4, Q1=0, Q3=1)
+
+```
+
+```{r}
+tab <- createTable(comp)
+```
+
+```{r}
+tab
+# export2csv(tab, "TARGET_AML_1031_MRDpositive_vs_MRDnegative_inSCT_ClinicalCharacteristics_Table.csv")
+```
+
+
+#Session Information 
+
+```{r}
+sessionInfo()
+```
+
